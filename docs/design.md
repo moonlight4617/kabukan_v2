@@ -783,10 +783,310 @@ main (本番)     ←── プルリクエスト ←── develop (ステー�
    - 自動ロールバック機能
    - デプロイ状況のSlack通知
 
+### 開発戦略
+
+#### ローカル開発環境
+
+**1. プロジェクト構造**
+```
+stock-analysis-notification/
+├── src/
+│   ├── __init__.py
+│   ├── main.py                 # ローカル実行用
+│   ├── lambda_function.py      # Lambda エントリーポイント
+│   ├── config/
+│   │   └── config_manager.py
+│   ├── services/
+│   │   ├── stock_data_service.py
+│   │   ├── analysis_service.py
+│   │   └── notification_service.py
+│   └── models/
+│       └── data_models.py
+├── tests/
+├── events/                     # テスト用イベントファイル
+├── template.yaml              # SAM テンプレート
+├── pyproject.toml
+├── requirements.txt
+└── .env.example
+```
+
+**2. 開発フロー**
+```
+1. ローカル開発 → 2. ユニットテスト → 3. SAM Local テスト → 4. デプロイ → 5. 統合テスト
+```
+
+**3. 環境設定**
+```python
+# .env.local (ローカル開発用)
+ENVIRONMENT=local
+LOG_LEVEL=DEBUG
+GOOGLE_SHEETS_ID=your_test_sheet_id
+GEMINI_API_KEY=your_test_api_key
+SLACK_WEBHOOK_URL=your_test_webhook
+```
+
+#### 段階的実装戦略
+
+**Phase 1: コア機能をローカルで開発**
+- データモデルの実装
+- 基本的なサービスクラス
+- ユニットテストの作成
+- ローカルでの動作確認
+
+**Phase 2: AWS統合の準備**
+- 設定管理（Parameter Store対応）
+- エラーハンドリング
+- ログ機能の実装
+
+**Phase 3: Lambda統合**
+- Lambda関数の作成
+- SAM Localでのテスト
+- 初回デプロイ
+
+**Phase 4: 本格運用**
+- CI/CDパイプライン
+- 監視・アラート設定
+- 本番デプロイ
+
+#### 開発環境セットアップ
+
+**1. Python仮想環境の作成**
+```bash
+# プロジェクトディレクトリに移動
+cd stock-analysis-notification
+
+# Python仮想環境を作成
+python -m venv venv
+
+# 仮想環境を有効化
+# Windows (Command Prompt)
+venv\Scripts\activate
+
+# Windows (PowerShell)
+venv\Scripts\Activate.ps1
+
+# macOS/Linux
+source venv/bin/activate
+
+# 仮想環境が有効化されていることを確認
+which python  # macOS/Linux
+where python   # Windows
+```
+
+**2. 依存関係のインストール**
+```bash
+# 本番用依存関係
+pip install -r requirements.txt
+
+# 開発用依存関係（オプション）
+pip install -e ".[dev]"  # pyproject.tomlを使用する場合
+
+# または個別インストール
+pip install pytest pytest-cov pytest-mock
+pip install black flake8 mypy
+pip install python-dotenv
+```
+
+**3. AWS SAM CLIのインストール**
+```bash
+# pip経由でインストール
+pip install aws-sam-cli
+
+# インストール確認
+sam --version
+```
+
+**4. 環境設定ファイルの作成**
+```bash
+# 環境設定ファイルをコピー
+cp .env.example .env.local
+
+# .env.localを編集（実際の値を設定）
+```
+
+**5. 開発用スクリプト**
+```bash
+# setup.sh (macOS/Linux用)
+#!/bin/bash
+echo "🚀 開発環境をセットアップ中..."
+
+# 仮想環境作成
+python -m venv venv
+source venv/bin/activate
+
+# 依存関係インストール
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install pytest pytest-cov black flake8
+
+# AWS SAM CLI
+pip install aws-sam-cli
+
+echo "✅ セットアップ完了！"
+echo "仮想環境を有効化するには: source venv/bin/activate"
+```
+
+```batch
+REM setup.bat (Windows用)
+@echo off
+echo 🚀 開発環境をセットアップ中...
+
+REM 仮想環境作成
+python -m venv venv
+call venv\Scripts\activate.bat
+
+REM 依存関係インストール
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install pytest pytest-cov black flake8
+
+REM AWS SAM CLI
+pip install aws-sam-cli
+
+echo ✅ セットアップ完了！
+echo 仮想環境を有効化するには: venv\Scripts\activate.bat
+```
+
+**6. 日常的な開発コマンド**
+```bash
+# 仮想環境有効化（毎回必要）
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+
+# ローカル実行
+python src/main.py
+
+# テスト実行
+pytest tests/ -v
+
+# コードフォーマット
+black src tests
+
+# リンティング
+flake8 src tests
+
+# 型チェック
+mypy src
+
+# SAM Localでテスト
+sam local invoke StockAnalysisFunction --event events/daily-analysis.json
+
+# 仮想環境無効化
+deactivate
+```
+
+**7. 便利なMakefile（オプション）**
+```makefile
+# Makefile
+.PHONY: setup install test lint format run clean deploy
+
+# 初回セットアップ
+setup:
+	python -m venv venv
+	@echo "仮想環境を有効化してください: source venv/bin/activate (Linux/Mac) または venv\\Scripts\\activate (Windows)"
+
+# 依存関係インストール
+install:
+	pip install --upgrade pip
+	pip install -r requirements.txt
+	pip install pytest pytest-cov black flake8 mypy aws-sam-cli
+
+# テスト実行
+test:
+	pytest tests/ -v --cov=src
+
+# リンティング
+lint:
+	flake8 src tests
+	mypy src
+
+# コードフォーマット
+format:
+	black src tests
+
+# ローカル実行
+run:
+	python src/main.py
+
+# SAM Localテスト
+sam-local:
+	sam local invoke StockAnalysisFunction --event events/daily-analysis.json
+
+# クリーンアップ
+clean:
+	find . -type d -name "__pycache__" -delete
+	find . -type f -name "*.pyc" -delete
+	rm -rf .pytest_cache
+	rm -rf .coverage
+
+# デプロイ
+deploy:
+	sam build
+	sam deploy --guided
+
+# 開発用コマンド（テスト + リント + フォーマット）
+dev: format lint test
+	@echo "✅ 開発チェック完了"
+```
+
+**使用例:**
+```bash
+# 初回セットアップ
+make setup
+source venv/bin/activate  # 仮想環境有効化
+make install
+
+# 日常的な開発
+make dev      # フォーマット + リント + テスト
+make run      # ローカル実行
+make sam-local # SAM Localテスト
+```
+
+**VS Code拡張（推奨）:**
+- AWS Toolkit
+- Python
+- Pylance
+- GitLens
+- Python Docstring Generator
+
+#### テスト戦略
+
+**1. ローカルテスト**
+```python
+# tests/test_stock_service.py
+import pytest
+from unittest.mock import Mock, patch
+from src.services.stock_data_service import StockDataService
+
+class TestStockDataService:
+    def test_fetch_stock_data_success(self):
+        service = StockDataService()
+        # モックを使用したテスト
+        with patch('yfinance.download') as mock_download:
+            mock_download.return_value = Mock()
+            result = service.fetch_stock_data(['AAPL'])
+            assert result is not None
+```
+
+**2. SAM Localテスト**
+```bash
+# イベントファイルを使用したテスト
+sam local invoke -e events/daily-analysis.json
+```
+
+**3. 統合テスト**
+```python
+# tests/integration/test_lambda_integration.py
+def test_lambda_handler_integration():
+    """実際のLambda環境での統合テスト"""
+    pass
+```
+
 ### コスト最適化
 
-**月間CI/CDコスト: $0**
+**月間開発・運用コスト: $0**
 - GitHub Actions: 無料枠内（月2,000分）
-- AWS Lambda デプロイ: 無料枠内
+- AWS Lambda: 無料枠内（月100万リクエスト）
 - CloudWatch: 無料枠内
-- 追加コストなし
+- SAM Local: 完全無料
+- 開発ツール: 全て無料
