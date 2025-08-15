@@ -23,6 +23,8 @@ This is a Python-based stock analysis and notification application built for AWS
 
 **Core Components:**
 - `ConfigManager` - AWS Parameter Store integration and Google Sheets configuration
+- `ParameterStoreService` - Secure parameter management with caching and error handling
+- `CloudWatchService` - Structured logging and custom metrics integration
 - `GoogleSheetsService` - Fetches holdings and watchlist data
 - `StockDataService` - Yahoo Finance integration with historical data
 - `TechnicalIndicatorService` - RSI, MACD, moving averages, breakout detection
@@ -124,5 +126,7 @@ dev.bat lint                # リンティング
 - Technical indicators use 25/75 period moving averages and 14-period RSI
 - Analysis prompts include technical indicators and portfolio context
 - Error handling distinguishes between temporary, configuration, and critical errors
-- CloudWatch metrics track API response times and success rates
+- CloudWatch structured logging for analysis workflow, API calls, and error tracking
+- CloudWatch custom metrics for performance monitoring (duration, recommendations count, API calls)
+- Parameter Store integration with TTL-based caching and thread-safe operations
 - Portfolio calculations include unrealized gains/losses, daily changes, performance metrics

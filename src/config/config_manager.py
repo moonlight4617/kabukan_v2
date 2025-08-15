@@ -24,6 +24,10 @@ from src.models.data_models import (
     GoogleSheetsConfig
 )
 from src.utils.validators import ConfigValidator, ValidationError
+from src.services.parameter_store_service import (
+    ParameterStoreService, 
+    ParameterStoreConfig
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +65,25 @@ class AppConfig:
 
 
 class ConfigManager:
-    """設定管理クラス"""
+    """設定管理クラス（強化版）"""
     
-    def __init__(self):
+    def __init__(self, region_name: str = "ap-northeast-1"):
         self.environment = os.getenv("ENVIRONMENT", "local")
         self.logger = logging.getLogger(__name__)
         self._config: Optional[AppConfig] = None
-        self._parameter_store_client = None
+        self._parameter_store_service = None
         
-        if AWS_AVAILABLE and self.environment == "aws":
+        # Parameter Storeサービスの初期化
+        if AWS_AVAILABLE and self.environment in ["aws", "test"]:
             try:
-                self._parameter_store_client = boto3.client("ssm")
+                self._parameter_store_service = ParameterStoreService(region_name)
+                if self._parameter_store_service.is_available:
+                    self.logger.info("Parameter Store統合が有効になりました")
+                else:
+                    self.logger.warning("Parameter Storeは利用できませんが、処理を続行します")
             except Exception as e:
-                self.logger.warning(f"AWS SSM client初期化に失敗: {e}")
+                self.logger.warning(f"Parameter Store初期化に失敗: {e}")
+                self._parameter_store_service = None
     
     def get_config(self) -> AppConfig:
         """設定を取得"""
@@ -135,59 +145,117 @@ class ConfigManager:
         )
     
     def _load_aws_config(self) -> AppConfig:
-        """AWS環境の設定を読み込み"""
+        """AWS環境の設定を読み込み（強化版）"""
         self.logger.info("AWS環境設定を読み込み中...")
         
-        if not self._parameter_store_client:
-            raise RuntimeError("AWS SSM clientが初期化されていません")
+        if not self._parameter_store_service or not self._parameter_store_service.is_available:
+            # フォールバック: 環境変数から読み込み
+            self.logger.warning("Parameter Storeが利用できません。環境変数から設定を読み込みます。")
+            return self._load_local_config()
         
-        # Parameter Storeから設定を取得
         try:
-            google_sheets_id = self._get_parameter("/stock-analysis/google-sheets-id")
-            google_credentials = self._get_parameter("/stock-analysis/google-credentials", decrypt=True)
-            gemini_api_key = self._get_parameter("/stock-analysis/gemini-api-key", decrypt=True)
-            slack_webhook = self._get_parameter("/stock-analysis/slack-webhook", decrypt=True)
+            # Parameter Storeから一括取得
+            parameters = self._get_aws_parameters()
             
-            # Google Sheets設定
-            google_sheets_config = GoogleSheetsConfig(
-                spreadsheet_id=google_sheets_id
-            )
+            # 設定の検証
+            validation_errors = ParameterStoreConfig.validate_parameter_structure(parameters)
+            if validation_errors:
+                self.logger.error("Parameter Store設定検証エラー:")
+                for error in validation_errors:
+                    self.logger.error(f"  - {error}")
+                raise ValueError("Parameter Store設定が無効です")
             
-            # Gemini設定
-            gemini_config = GeminiConfig(
-                api_key=gemini_api_key
-            )
-            
-            # Slack設定
-            slack_config = SlackConfig(
-                webhook_url=slack_webhook
-            )
-            
-            return AppConfig(
-                environment=self.environment,
-                log_level=os.getenv("LOG_LEVEL", "INFO"),
-                google_sheets=google_sheets_config,
-                gemini=gemini_config,
-                slack=slack_config,
-                aws_region=os.getenv("AWS_REGION", "ap-northeast-1")
-            )
+            # 設定オブジェクトの構築
+            return self._build_config_from_parameters(parameters)
             
         except Exception as e:
             self.logger.error(f"AWS設定の読み込みに失敗: {e}")
-            raise
+            
+            # 重大エラーの場合は再試行しない
+            if isinstance(e, (PermissionError, ValueError)):
+                raise
+            
+            # 一時的なエラーの場合はフォールバック
+            self.logger.warning("フォールバックとして環境変数から設定を読み込みます")
+            return self._load_local_config()
     
-    def _get_parameter(self, parameter_name: str, decrypt: bool = False) -> str:
-        """Parameter Storeからパラメータを取得"""
-        try:
-            response = self._parameter_store_client.get_parameter(
-                Name=parameter_name,
-                WithDecryption=decrypt
-            )
-            return response["Parameter"]["Value"]
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ParameterNotFound":
-                raise ValueError(f"パラメータが見つかりません: {parameter_name}")
-            raise
+    def _get_aws_parameters(self) -> Dict[str, str]:
+        """Parameter Storeから必要なパラメータを一括取得"""
+        parameters = {}
+        
+        # 必須パラメータを順次取得
+        param_configs = [
+            ("google_sheets_id", False),
+            ("google_credentials", True),
+            ("gemini_api_key", True),
+            ("slack_webhook", True),
+            ("slack_channel", False),
+            ("log_level", False)
+        ]
+        
+        for param_key, is_secure in param_configs:
+            param_path = ParameterStoreConfig.get_parameter_path(param_key)
+            try:
+                value = self._parameter_store_service.get_parameter(
+                    param_path, 
+                    decrypt=is_secure,
+                    use_cache=True
+                )
+                parameters[param_key] = value
+                self.logger.debug(f"パラメータ取得成功: {param_key}")
+            except ValueError:
+                # 必須パラメータの場合はエラー
+                if param_key in ["google_sheets_id", "gemini_api_key", "slack_webhook"]:
+                    raise
+                # オプションパラメータの場合はデフォルト値を使用
+                self.logger.warning(f"オプションパラメータが見つかりません: {param_key}")
+            except Exception as e:
+                self.logger.error(f"パラメータ取得エラー ({param_key}): {e}")
+                if param_key in ["google_sheets_id", "gemini_api_key", "slack_webhook"]:
+                    raise
+        
+        return parameters
+    
+    def _build_config_from_parameters(self, parameters: Dict[str, str]) -> AppConfig:
+        """Parameter Storeのパラメータから設定オブジェクトを構築"""
+        # Google Sheets設定
+        google_sheets_config = GoogleSheetsConfig(
+            spreadsheet_id=parameters["google_sheets_id"]
+        )
+        
+        # Google認証情報の処理
+        if "google_credentials" in parameters:
+            # JSON文字列をファイルに保存するかメモリで保持するかを決定
+            credentials_data = parameters["google_credentials"]
+            try:
+                # JSON形式の検証
+                json.loads(credentials_data)
+                google_sheets_config.credentials_json_path = "memory"  # メモリ保持を示す
+            except json.JSONDecodeError:
+                self.logger.warning("Google認証情報のJSON形式が無効です")
+        
+        # Gemini設定
+        gemini_config = GeminiConfig(
+            api_key=parameters["gemini_api_key"],
+            model=os.getenv("GEMINI_MODEL", "gemini-pro")
+        )
+        
+        # Slack設定
+        slack_config = SlackConfig(
+            webhook_url=parameters["slack_webhook"],
+            channel=parameters.get("slack_channel", "#stock-analysis")
+        )
+        
+        return AppConfig(
+            environment=self.environment,
+            log_level=parameters.get("log_level", "INFO"),
+            google_sheets=google_sheets_config,
+            gemini=gemini_config,
+            slack=slack_config,
+            aws_region=os.getenv("AWS_REGION", "ap-northeast-1"),
+            test_mode=os.getenv("TEST_MODE", "false").lower() == "true",
+            mock_external_apis=os.getenv("MOCK_EXTERNAL_APIS", "false").lower() == "true"
+        )
     
     def validate_config(self, config: AppConfig) -> bool:
         """設定の妥当性を検証（強化版）"""
@@ -269,3 +337,110 @@ class ConfigManager:
             self.logger.info("株式データをキャッシュに保存しました")
         except Exception as e:
             self.logger.warning(f"キャッシュファイルの保存に失敗: {e}")
+    
+    # Parameter Store管理メソッド
+    
+    def get_parameter_store_status(self) -> Dict[str, Any]:
+        """Parameter Store統合の状況を取得"""
+        if not self._parameter_store_service:
+            return {
+                "available": False,
+                "reason": "Parameter Storeサービスが初期化されていません"
+            }
+        
+        return {
+            "available": self._parameter_store_service.is_available,
+            "cache_info": self._parameter_store_service.get_cache_info() if self._parameter_store_service.is_available else None,
+            "connection_valid": self._parameter_store_service.validate_connection() if self._parameter_store_service.is_available else False
+        }
+    
+    def refresh_config(self, clear_cache: bool = True) -> bool:
+        """設定を再読み込み"""
+        try:
+            if clear_cache and self._parameter_store_service:
+                self._parameter_store_service.clear_cache()
+            
+            # 設定をクリアして再読み込み
+            self._config = None
+            self._config = self._load_config()
+            
+            # 検証
+            if not self.validate_config(self._config):
+                self.logger.error("再読み込みした設定の検証に失敗しました")
+                return False
+            
+            self.logger.info("設定の再読み込みが完了しました")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"設定の再読み込みに失敗: {e}")
+            return False
+    
+    def setup_parameter_store(self, parameters: Dict[str, str], overwrite: bool = False) -> bool:
+        """Parameter Storeに初期パラメータを設定"""
+        if not self._parameter_store_service or not self._parameter_store_service.is_available:
+            self.logger.error("Parameter Storeが利用できません")
+            return False
+        
+        success_count = 0
+        total_count = len(parameters)
+        
+        for key, value in parameters.items():
+            try:
+                param_path = ParameterStoreConfig.get_parameter_path(key)
+                param_type = "SecureString" if ParameterStoreConfig.is_secure_parameter(key) else "String"
+                
+                success = self._parameter_store_service.put_parameter(
+                    parameter_name=param_path,
+                    value=value,
+                    parameter_type=param_type,
+                    description=f"Stock analysis application parameter: {key}",
+                    overwrite=overwrite
+                )
+                
+                if success:
+                    success_count += 1
+                    self.logger.info(f"パラメータ設定成功: {key}")
+                else:
+                    self.logger.error(f"パラメータ設定失敗: {key}")
+                    
+            except Exception as e:
+                self.logger.error(f"パラメータ設定エラー ({key}): {e}")
+        
+        self.logger.info(f"Parameter Store設定完了: {success_count}/{total_count}")
+        return success_count == total_count
+    
+    def get_google_credentials_json(self) -> Optional[Dict[str, Any]]:
+        """Google認証情報JSONを取得"""
+        if not self._parameter_store_service or not self._parameter_store_service.is_available:
+            return None
+        
+        try:
+            param_path = ParameterStoreConfig.get_parameter_path("google_credentials")
+            credentials_str = self._parameter_store_service.get_parameter(param_path, decrypt=True)
+            return json.loads(credentials_str)
+        except Exception as e:
+            self.logger.error(f"Google認証情報の取得に失敗: {e}")
+            return None
+    
+    def test_all_connections(self) -> Dict[str, bool]:
+        """すべての外部サービスへの接続をテスト"""
+        results = {}
+        
+        # Parameter Store接続テスト
+        if self._parameter_store_service:
+            results["parameter_store"] = self._parameter_store_service.validate_connection()
+        else:
+            results["parameter_store"] = False
+        
+        # 設定の取得テスト
+        try:
+            config = self.get_config()
+            results["config_load"] = True
+            results["config_valid"] = self.validate_config(config)
+        except Exception as e:
+            self.logger.error(f"設定の取得/検証に失敗: {e}")
+            results["config_load"] = False
+            results["config_valid"] = False
+        
+        return results
