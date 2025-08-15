@@ -74,13 +74,55 @@ sam deploy --config-env [staging|production]
 - Weekly: `0 23 ? * FRI *` (Friday 23:00)
 - Monthly: `0 23 L * ? *` (Last day of month 23:00)
 
+## Data Models
+
+**Core Classes:**
+- `StockConfig` - 保有銘柄設定（symbol, name, quantity, purchase_price）
+- `WatchlistStock` - ウォッチリスト銘柄（symbol, name）
+- `StockData` - 市場データ（prices, volume, timestamp, 履歴データ）
+- `StockHolding` - 保有株式（設定+市場データ+計算値）
+- `Portfolio` - ポートフォリオ全体（holdings, 合計値, パフォーマンス指標）
+- `GoogleSheetsConfig` - Google Sheets設定
+
+**Analysis Models:**
+- `AnalysisType` - 分析タイプ（DAILY, WEEKLY, MONTHLY）
+- `RecommendationType` - 推奨タイプ（BUY, SELL, HOLD, STRONG_BUY, STRONG_SELL）
+- `RiskLevel` - リスクレベル（LOW, MEDIUM, HIGH, VERY_HIGH）
+- `TechnicalSignal` - テクニカルシグナル（BULLISH, BEARISH, NEUTRAL）
+- `TechnicalIndicators` - テクニカル指標（RSI, MACD, 移動平均、ブレイクアウト等）
+- `Recommendation` - AI推奨（type, symbol, confidence, reasoning, target_price等）
+- `RiskAssessment` - リスク評価（overall_risk, diversification_score, 業種/国別集中度等）
+- `AnalysisResult` - 分析結果（summary, recommendations, risk_assessment, market_outlook等）
+
+**Validation:**
+- `StockValidator` - 株式データ検証（銘柄コード、価格、数量等）
+- `ConfigValidator` - 設定データ検証（API keys, URLs等）
+- `DataCollectionValidator` - 一括データ検証
+- `AnalysisValidator` - 分析結果検証（推奨の整合性、テクニカル指標等）
+- `AnalysisCollectionValidator` - 複数分析結果の一貫性検証
+- すべてのデータクラスに組み込みvalidation機能
+
+## Development Setup
+
+**Local Development:**
+```bash
+setup.bat                    # 開発環境自動セットアップ
+dev.bat run daily           # 日次分析実行
+dev.bat test                # テスト実行
+dev.bat format              # コードフォーマット
+dev.bat lint                # リンティング
+```
+
 ## Important Implementation Notes
 
 - Google Sheets structure: "保有銘柄" sheet (holdings) and "ウォッチリスト" sheet (watchlist)
 - Holdings sheet columns: symbol, name, quantity, purchase_price
-- Watchlist sheet columns: symbol, name
+- Watchlist sheet columns: symbol, name  
+- Data validation at multiple levels: input validation, business logic validation, configuration validation
+- Comprehensive error handling with ValidationError for user-friendly messages
 - All external API calls include retry logic with exponential backoff
 - Technical indicators use 25/75 period moving averages and 14-period RSI
 - Analysis prompts include technical indicators and portfolio context
 - Error handling distinguishes between temporary, configuration, and critical errors
 - CloudWatch metrics track API response times and success rates
+- Portfolio calculations include unrealized gains/losses, daily changes, performance metrics

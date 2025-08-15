@@ -17,33 +17,15 @@ try:
 except ImportError:
     AWS_AVAILABLE = False
 
+# データモデルをインポート
+from src.models.data_models import (
+    StockConfig, 
+    WatchlistStock, 
+    GoogleSheetsConfig
+)
+from src.utils.validators import ConfigValidator, ValidationError
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class StockConfig:
-    """株式設定"""
-    symbol: str
-    name: str
-    quantity: int
-    purchase_price: Optional[float] = None
-
-
-@dataclass
-class WatchlistStock:
-    """ウォッチリスト株式"""
-    symbol: str
-    name: str
-
-
-@dataclass
-class GoogleSheetsConfig:
-    """Google Sheets設定"""
-    spreadsheet_id: str
-    holdings_sheet_name: str = "保有銘柄"
-    watchlist_sheet_name: str = "ウォッチリスト"
-    credentials_json_path: str = "credentials.json"
 
 
 @dataclass
@@ -208,28 +190,52 @@ class ConfigManager:
             raise
     
     def validate_config(self, config: AppConfig) -> bool:
-        """設定の妥当性を検証"""
+        """設定の妥当性を検証（強化版）"""
         errors = []
         
-        # Google Sheets設定の検証
-        if not config.google_sheets.spreadsheet_id:
-            errors.append("Google Sheets IDが設定されていません")
-        
-        # Gemini設定の検証
-        if not config.gemini.api_key:
-            errors.append("Gemini API keyが設定されていません")
-        
-        # Slack設定の検証
-        if not config.slack.webhook_url or not config.slack.webhook_url.startswith("https://"):
-            errors.append("有効なSlack webhook URLが設定されていません")
-        
-        if errors:
-            error_message = "設定検証エラー:\n" + "\n".join(f"- {error}" for error in errors)
-            self.logger.error(error_message)
+        try:
+            # Google Sheets設定の検証
+            try:
+                ConfigValidator.validate_google_sheets_id(config.google_sheets.spreadsheet_id)
+            except ValidationError as e:
+                errors.append(f"Google Sheets設定: {str(e)}")
+            
+            # データクラス内の検証も実行
+            if not config.google_sheets.is_valid:
+                errors.append("Google Sheets設定に無効な値が含まれています")
+            
+            # Gemini設定の検証
+            try:
+                ConfigValidator.validate_api_key(config.gemini.api_key, "Gemini")
+            except ValidationError as e:
+                errors.append(f"Gemini設定: {str(e)}")
+            
+            # Slack設定の検証
+            try:
+                ConfigValidator.validate_webhook_url(config.slack.webhook_url)
+            except ValidationError as e:
+                errors.append(f"Slack設定: {str(e)}")
+            
+            # 環境固有の検証
+            if config.environment not in ["local", "aws", "test"]:
+                errors.append(f"無効な環境設定: {config.environment}")
+            
+            # ログレベルの検証
+            valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+            if config.log_level.upper() not in valid_log_levels:
+                errors.append(f"無効なログレベル: {config.log_level}")
+            
+            if errors:
+                error_message = "設定検証エラー:\n" + "\n".join(f"- {error}" for error in errors)
+                self.logger.error(error_message)
+                return False
+            
+            self.logger.info("設定の検証が完了しました")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"設定検証中に予期しないエラーが発生: {e}")
             return False
-        
-        self.logger.info("設定の検証が完了しました")
-        return True
     
     def get_credentials_path(self) -> Path:
         """Google Sheets認証情報ファイルのパスを取得"""
