@@ -1,47 +1,49 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
-echo 🚀 開発環境をセットアップ中...
+echo 🚀 Setting up the development environment...
 echo.
 
-REM 仮想環境作成
-echo Python仮想環境を作成中...
+REM Create virtual environment
+echo Creating Python virtual environment...
 python -m venv venv
 if %errorlevel% neq 0 (
-    echo ❌ 仮想環境の作成に失敗しました。Pythonが正しくインストールされているか確認してください。
+    echo ❌ Failed to create virtual environment. Please ensure Python is installed correctly.
     pause
     exit /b 1
 )
 
-REM 仮想環境を有効化
-echo 仮想環境を有効化中...
+REM Activate virtual environment
+echo Activating virtual environment...
 call venv\Scripts\activate.bat
 
-REM 依存関係インストール
-echo 依存関係をインストール中...
+REM Install dependencies
+echo Installing dependencies...
 pip install --upgrade pip
+
+REM Install production dependencies
+echo Installing production dependencies...
 pip install -r requirements.txt
-pip install pytest pytest-cov black flake8 python-dotenv
 
-REM 開発用依存関係
-echo 開発用ツールをインストール中...
-pip install pytest-mock mypy aws-sam-cli
+REM Install development dependencies
+echo Installing development dependencies...
+pip install -r requirements-dev.txt
 
-REM 環境設定ファイルのコピー
+REM Copy environment configuration file
 if not exist .env.local (
-    echo 環境設定ファイルを作成中...
+    echo Creating environment configuration file...
     copy .env.example .env.local
-    echo ⚠️  .env.localファイルに実際の設定値を入力してください。
+    echo ⚠️  Please update the .env.local file with actual configuration values.
 ) else (
-    echo ℹ️  .env.localファイルは既に存在します。
+    echo ℹ️  .env.local file already exists.
 )
 
 echo.
-echo ✅ セットアップ完了！
+echo ✅ Setup complete!
 echo.
-echo 📋 次の手順:
-echo 1. .env.localファイルを編集して実際の設定値を入力
-echo 2. 仮想環境を有効化: venv\Scripts\activate.bat
-echo 3. ローカル実行: python src\main.py
-echo 4. テスト実行: pytest tests\ -v
+echo 📋 Next steps:
+echo 1. Edit the .env.local file with actual configuration values
+echo 2. Activate the virtual environment: venv\Scripts\activate.bat
+echo 3. Run locally: python src\main.py
+echo 4. Run tests: pytest tests\ -v
 echo.
 pause

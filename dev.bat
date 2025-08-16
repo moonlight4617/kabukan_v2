@@ -41,8 +41,10 @@ if "%1"=="setup" (
 if "%1"=="install" (
     echo 📦 依存関係をインストール中...
     pip install --upgrade pip
+    echo 本番依存関係をインストール中...
     pip install -r requirements.txt
-    pip install pytest pytest-cov black flake8 python-dotenv pytest-mock mypy
+    echo 開発依存関係をインストール中...
+    pip install -r requirements-dev.txt
     echo ✅ インストール完了
     goto :eof
 )
