@@ -210,6 +210,31 @@ from .performance_optimizer import (
     optimize_execution
 )
 
+from .error_handler import (
+    ErrorHandler,
+    ErrorSeverity,
+    ErrorCategory,
+    ErrorHandlingStrategy,
+    ErrorInfo,
+    ErrorHandlingConfig,
+    ErrorHandlingRule,
+    CircuitBreaker,
+    error_handler_decorator
+)
+
+from .retry_policy import (
+    RetryPolicyManager,
+    RetryPolicy,
+    BackoffStrategy,
+    RetryCondition,
+    RetryAttempt,
+    RetryResult,
+    CircuitBreakerState,
+    CircuitBreakerInfo,
+    get_retry_policy_manager,
+    retry_with_policy
+)
+
 __all__ = [
     # Parameter Store
     "ParameterStoreService",
@@ -394,5 +419,28 @@ __all__ = [
     "MemoryMonitor",
     "CacheManager",
     "get_optimizer",
-    "optimize_execution"
+    "optimize_execution",
+    
+    # Error Handler
+    "ErrorHandler",
+    "ErrorSeverity",
+    "ErrorCategory",
+    "ErrorHandlingStrategy",
+    "ErrorInfo",
+    "ErrorHandlingConfig",
+    "ErrorHandlingRule",
+    "CircuitBreaker",
+    "error_handler_decorator",
+    
+    # Retry Policy
+    "RetryPolicyManager",
+    "RetryPolicy",
+    "BackoffStrategy",
+    "RetryCondition",
+    "RetryAttempt",
+    "RetryResult",
+    "CircuitBreakerState",
+    "CircuitBreakerInfo",
+    "get_retry_policy_manager",
+    "retry_with_policy"
 ]
