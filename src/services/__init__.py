@@ -150,6 +150,44 @@ from .ai_analysis_error_handler import (
     QualityChecker
 )
 
+from .slack_service import (
+    SlackService,
+    SlackConfig,
+    SlackMessage,
+    SlackAttachment,
+    SlackField,
+    SlackBlock,
+    SlackResponse,
+    MessageType,
+    Priority
+)
+
+from .slack_notification_formatter import (
+    SlackNotificationFormatter,
+    NotificationTemplate,
+    NotificationContext
+)
+
+from .slack_notification_error_handler import (
+    SlackNotificationErrorHandler,
+    NotificationErrorType,
+    ErrorSeverity,
+    NotificationError,
+    NotificationResult,
+    FallbackStrategy,
+    NotificationConfig
+)
+
+from .slack_priority_notification_manager import (
+    SlackPriorityNotificationManager,
+    UrgencyLevel,
+    AlertType,
+    UrgencyRule,
+    NotificationSchedule,
+    EscalationRule,
+    NotificationMetrics
+)
+
 __all__ = [
     # Parameter Store
     "ParameterStoreService",
@@ -280,5 +318,39 @@ __all__ = [
     "ErrorContext",
     "RecoveryAction",
     "AIAnalysisResult",
-    "QualityChecker"
+    "QualityChecker",
+    
+    # Slack Service
+    "SlackService",
+    "SlackConfig",
+    "SlackMessage",
+    "SlackAttachment",
+    "SlackField",
+    "SlackBlock",
+    "SlackResponse",
+    "MessageType",
+    "Priority",
+    
+    # Slack Notification Formatter
+    "SlackNotificationFormatter",
+    "NotificationTemplate",
+    "NotificationContext",
+    
+    # Slack Notification Error Handler
+    "SlackNotificationErrorHandler",
+    "NotificationErrorType",
+    "ErrorSeverity",
+    "NotificationError",
+    "NotificationResult",
+    "FallbackStrategy",
+    "NotificationConfig",
+    
+    # Slack Priority Notification Manager
+    "SlackPriorityNotificationManager",
+    "UrgencyLevel",
+    "AlertType",
+    "UrgencyRule",
+    "NotificationSchedule",
+    "EscalationRule",
+    "NotificationMetrics"
 ]
