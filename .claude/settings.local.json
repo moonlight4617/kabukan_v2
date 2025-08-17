@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(venv/Scripts/python -m pytest tests/unit/test_gemini_service.py::TestGeminiService::test_prompt_generation_stock_analysis -v)",
+      "Bash(venv/Scripts/python -m pytest tests/unit/test_gemini_service.py::TestGeminiService::test_parse_analysis_response_valid_json -v)",
+      "Bash(venv/Scripts/python -m pytest tests/unit/test_gemini_service.py -v)",
+      "Bash(venv/Scripts/python -m pytest tests/unit/test_daily_analysis_service.py -v)",
+      "Bash(venv/Scripts/python -m pytest tests/unit/test_daily_analysis_service.py::TestDailyAnalysisService::test_execute_daily_analysis_success -v)",
+      "Bash(venv/Scripts/python:*)",
+      "Bash(sed:*)",
+      "Bash(cp:*)"
     ],
     "deny": [],
     "ask": []

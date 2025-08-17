@@ -105,6 +105,25 @@ class BatchDataResult:
     def success_rate(self) -> float:
         """成功率"""
         return self.success_count / self.total_count if self.total_count > 0 else 0.0
+    
+    @property
+    def stock_data(self) -> Dict[str, StockData]:
+        """成功した株式データを辞書形式で取得"""
+        return {
+            result.symbol: result.data
+            for result in self.results
+            if result.success and result.data is not None
+        }
+    
+    @property
+    def success(self) -> bool:
+        """全体の成功判定"""
+        return self.success_count > 0
+    
+    @property
+    def error_message(self) -> str:
+        """エラーメッセージの結合"""
+        return "; ".join(self.errors) if self.errors else ""
 
 
 class RateLimiter:

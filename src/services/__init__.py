@@ -86,6 +86,70 @@ from .technical_analysis_service import (
     CrossoverType
 )
 
+from .gemini_service import (
+    GeminiService,
+    GeminiConfig,
+    GeminiRequest,
+    GeminiResponse,
+    ModelType,
+    AnalysisMode
+)
+
+from .daily_analysis_service import (
+    DailyAnalysisService,
+    DailyAnalysisResult,
+    HoldingRecommendation,
+    WatchlistRecommendation,
+    HoldingAction,
+    WatchlistAction
+)
+
+from .weekly_analysis_service import (
+    WeeklyAnalysisService,
+    WeeklyAnalysisResult,
+    StockPerformance,
+    PortfolioPerformance,
+    BenchmarkComparison,
+    PerformanceCategory
+)
+
+from .monthly_analysis_service import (
+    MonthlyAnalysisService,
+    MonthlyAnalysisResult,
+    RegionalPerformance,
+    SectorPerformance,
+    DiversificationMetrics,
+    RebalanceRecommendation,
+    RegionType,
+    SectorType,
+    DiversificationLevel
+)
+
+from .prompt_generation_service import (
+    PromptGenerationService,
+    PromptTemplate,
+    PromptContext,
+    GeneratedPrompt
+)
+
+from .analysis_result_parser import (
+    AnalysisResultParser,
+    ParseStatus,
+    ValidationSeverity,
+    ValidationIssue,
+    ParseResult
+)
+
+from .ai_analysis_error_handler import (
+    AIAnalysisErrorHandler,
+    ErrorType,
+    RecoveryStrategy,
+    ErrorContext,
+    RecoveryAction,
+    AIAnalysisResult,
+    QualityChecker
+)
+
 __all__ = [
     # Parameter Store
     "ParameterStoreService",
@@ -159,5 +223,62 @@ __all__ = [
     "MarketCorrelation",
     "TrendDirection",
     "SignalType",
-    "CrossoverType"
+    "CrossoverType",
+    
+    # Gemini AI
+    "GeminiService",
+    "GeminiConfig",
+    "GeminiRequest",
+    "GeminiResponse",
+    "ModelType",
+    "AnalysisMode",
+    
+    # Daily Analysis
+    "DailyAnalysisService",
+    "DailyAnalysisResult",
+    "HoldingRecommendation",
+    "WatchlistRecommendation",
+    "HoldingAction",
+    "WatchlistAction",
+    
+    # Weekly Analysis
+    "WeeklyAnalysisService",
+    "WeeklyAnalysisResult",
+    "StockPerformance",
+    "PortfolioPerformance",
+    "BenchmarkComparison",
+    "PerformanceCategory",
+    
+    # Monthly Analysis
+    "MonthlyAnalysisService",
+    "MonthlyAnalysisResult", 
+    "RegionalPerformance",
+    "SectorPerformance",
+    "DiversificationMetrics",
+    "RebalanceRecommendation",
+    "RegionType",
+    "SectorType",
+    "DiversificationLevel",
+    
+    # Prompt Generation
+    "PromptGenerationService",
+    "PromptTemplate",
+    "PromptContext",
+    "GeneratedPrompt",
+    
+    # Analysis Result Parser
+    "AnalysisResultParser",
+    "ParseStatus",
+    "ValidationSeverity",
+    "ValidationIssue",
+    "ParseResult",
+    
+    # AI Analysis Error Handler
+    "AIAnalysisErrorHandler",
+    "ErrorType",
+    "RecoveryStrategy",
+    "ErrorContext",
+    "RecoveryAction",
+    "AIAnalysisResult",
+    "QualityChecker"
 ]
