@@ -188,6 +188,28 @@ from .slack_priority_notification_manager import (
     NotificationMetrics
 )
 
+from .workflow_orchestrator import (
+    WorkflowOrchestrator,
+    WorkflowStage,
+    RecoveryAction,
+    WorkflowError,
+    WorkflowMetrics,
+    WorkflowContext
+)
+
+from .performance_optimizer import (
+    PerformanceOptimizer,
+    OptimizationLevel,
+    ResourceType,
+    PerformanceMetrics,
+    OptimizationConfig,
+    OptimizationResult,
+    MemoryMonitor,
+    CacheManager,
+    get_optimizer,
+    optimize_execution
+)
+
 __all__ = [
     # Parameter Store
     "ParameterStoreService",
@@ -352,5 +374,25 @@ __all__ = [
     "UrgencyRule",
     "NotificationSchedule",
     "EscalationRule",
-    "NotificationMetrics"
+    "NotificationMetrics",
+    
+    # Workflow Orchestrator
+    "WorkflowOrchestrator",
+    "WorkflowStage",
+    "RecoveryAction",
+    "WorkflowError",
+    "WorkflowMetrics",
+    "WorkflowContext",
+    
+    # Performance Optimizer
+    "PerformanceOptimizer",
+    "OptimizationLevel",
+    "ResourceType",
+    "PerformanceMetrics",
+    "OptimizationConfig",
+    "OptimizationResult",
+    "MemoryMonitor",
+    "CacheManager",
+    "get_optimizer",
+    "optimize_execution"
 ]
