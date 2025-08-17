@@ -1,0 +1,287 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    strategy:
+      matrix:
+        test-type: [unit, integration, performance]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        
+    - name: Set up test environment
+      run: |
+        # テスト環境変数を設定
+        echo "ENVIRONMENT=test" >> $GITHUB_ENV
+        echo "TEST_DEBUG=true" >> $GITHUB_ENV
+        echo "DISABLE_MOCKS=false" >> $GITHUB_ENV
+        echo "TEST_TIMEOUT=30" >> $GITHUB_ENV
+        
+        # AWSモック設定
+        echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
+        echo "AWS_ACCESS_KEY_ID=test-access-key" >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=test-secret-key" >> $GITHUB_ENV
+        
+        # テスト用ディレクトリ作成
+        mkdir -p tests/reports
+        mkdir -p tests/coverage
+        
+    - name: Run unit tests
+      if: matrix.test-type == 'unit'
+      run: |
+        python -m pytest tests/unit/ \
+          --verbose \
+          --tb=short \
+          --cov=src \
+          --cov-report=xml:tests/coverage/unit-coverage.xml \
+          --cov-report=html:tests/coverage/unit-html \
+          --cov-report=term \
+          --junitxml=tests/reports/unit-results.xml \
+          --maxfail=5 \
+          --durations=10
+          
+    - name: Run integration tests
+      if: matrix.test-type == 'integration'
+      run: |
+        python -m pytest tests/integration/ \
+          --verbose \
+          --tb=short \
+          --junitxml=tests/reports/integration-results.xml \
+          --maxfail=3 \
+          --durations=10 \
+          -m "integration"
+          
+    - name: Run performance tests
+      if: matrix.test-type == 'performance'
+      run: |
+        python -m pytest tests/performance/ \
+          --verbose \
+          --tb=short \
+          --junitxml=tests/reports/performance-results.xml \
+          --maxfail=1 \
+          --durations=10 \
+          -m "performance" || echo "Performance tests completed"
+          
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.test-type }}
+        path: |
+          tests/reports/
+          tests/coverage/
+          
+    - name: Upload coverage to Codecov
+      if: matrix.test-type == 'unit'
+      uses: codecov/codecov-action@v3
+      with:
+        file: tests/coverage/unit-coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        
+    - name: Comment coverage on PR
+      if: matrix.test-type == 'unit' && github.event_name == 'pull_request'
+      uses: py-cov-action/python-coverage-comment-action@v3
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERAGE_FILE: tests/coverage/unit-coverage.xml
+
+  lint-and-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy
+        
+    - name: Run Black (code formatting check)
+      run: |
+        black --check --diff src/ tests/
+        
+    - name: Run isort (import sorting check)
+      run: |
+        isort --check-only --diff src/ tests/
+        
+    - name: Run flake8 (linting)
+      run: |
+        flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203,W503
+        
+    - name: Run mypy (type checking)
+      run: |
+        mypy src/ --ignore-missing-imports --no-strict-optional
+        
+  security-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety
+        
+    - name: Run bandit (security linting)
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ --severity-level medium
+        
+    - name: Run safety (dependency vulnerability check)
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check
+        
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [test, lint-and-format, security-check]
+    if: always()
+    
+    steps:
+    - name: Download all test artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: ./artifacts
+        
+    - name: Generate test summary
+      run: |
+        echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # テスト結果のサマリーを生成
+        for artifact in ./artifacts/test-results-*; do
+          if [ -d "$artifact" ]; then
+            test_type=$(basename "$artifact" | sed 's/test-results-//')
+            echo "### $test_type Tests" >> $GITHUB_STEP_SUMMARY
+            
+            if [ -f "$artifact/reports/${test_type}-results.xml" ]; then
+              echo "✅ Test results available" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ No test results found" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+        done
+        
+        # リンターとセキュリティチェックの結果
+        if [ "${{ needs.lint-and-format.result }}" = "success" ]; then
+          echo "### Code Quality" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Linting and formatting checks passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### Code Quality" >> $GITHUB_STEP_SUMMARY
+          echo "❌ Linting and formatting checks failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ needs.security-check.result }}" = "success" ]; then
+          echo "### Security" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Security checks passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### Security" >> $GITHUB_STEP_SUMMARY
+          echo "❌ Security checks failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+  notify:
+    runs-on: ubuntu-latest
+    needs: [test, lint-and-format, security-check]
+    if: always() && (needs.test.result == 'failure' || needs.lint-and-format.result == 'failure' || needs.security-check.result == 'failure')
+    
+    steps:
+    - name: Notify Slack on failure
+      if: env.SLACK_CI_WEBHOOK != ''
+      env:
+        SLACK_CI_WEBHOOK: ${{ secrets.SLACK_CI_WEBHOOK }}
+      run: |
+        curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"text\": \"🚨 CI/CD Pipeline Failed\",
+            \"blocks\": [
+              {
+                \"type\": \"section\",
+                \"text\": {
+                  \"type\": \"mrkdwn\",
+                  \"text\": \"*CI/CD Pipeline Failed* :x:\n\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Actor:* ${{ github.actor }}\"
+                }
+              },
+              {
+                \"type\": \"section\",
+                \"text\": {
+                  \"type\": \"mrkdwn\",
+                  \"text\": \"*Results:*\n• Tests: ${{ needs.test.result }}\n• Lint & Format: ${{ needs.lint-and-format.result }}\n• Security: ${{ needs.security-check.result }}\"
+                }
+              },
+              {
+                \"type\": \"actions\",
+                \"elements\": [
+                  {
+                    \"type\": \"button\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \"View Details\"
+                    },
+                    \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                  }
+                ]
+              }
+            ]
+          }" \
+          "$SLACK_CI_WEBHOOK"

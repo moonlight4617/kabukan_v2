@@ -165,7 +165,7 @@ class ErrorHandlingConfig:
         if self.retry_config is None:
             self.retry_config = RetryConfig(
                 max_attempts=3,
-                initial_delay=1.0,
+                base_delay=1.0,
                 max_delay=30.0
             )
 

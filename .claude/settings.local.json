@@ -16,7 +16,16 @@
       "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_daily_analysis_service.py -v)",
       "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_data_models.py -v)",
       "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_analysis_models.py -v)",
-      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_retry_manager.py -v)"
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_retry_manager.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_error_handler.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_error_handler.py::TestErrorHandler::test_handle_error_basic -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_retry_policy.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_retry_policy.py::TestRetryPolicyManager::test_execute_with_retry_failure_then_success -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_performance_optimizer.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_workflow_orchestrator.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_error_handler.py tests/unit/test_retry_policy.py -v --tb=short)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/integration/test_end_to_end_workflow.py::TestEndToEndWorkflow::test_daily_analysis_complete_workflow -v --tb=short)",
+      "Bash(\"venv\\Scripts\\python.exe\":*)"
     ],
     "deny": [],
     "ask": []
