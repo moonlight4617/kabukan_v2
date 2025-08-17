@@ -230,8 +230,8 @@ class TestDailyAnalysisService:
                 timestamp=datetime.now()
             )
             ,
-            \"MSFT\": StockData(
-                symbol=\"MSFT\",
+            "MSFT": StockData(
+                symbol="MSFT",
                 current_price=300.0,
                 previous_close=295.0,
                 change=5.0,
@@ -239,8 +239,8 @@ class TestDailyAnalysisService:
                 volume=30000000,
                 timestamp=datetime.now()
             ),
-            \"TSLA\": StockData(
-                symbol=\"TSLA\",
+            "TSLA": StockData(
+                symbol="TSLA",
                 current_price=200.0,
                 previous_close=198.0,
                 change=2.0,

@@ -9,7 +9,14 @@
       "Bash(venv/Scripts/python -m pytest tests/unit/test_daily_analysis_service.py::TestDailyAnalysisService::test_execute_daily_analysis_success -v)",
       "Bash(venv/Scripts/python:*)",
       "Bash(sed:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(venvScriptspython -m pytest:*)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/ -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_gemini_service.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_daily_analysis_service.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_data_models.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_analysis_models.py -v)",
+      "Bash(\"venv\\Scripts\\python.exe\" -m pytest tests/unit/test_retry_manager.py -v)"
     ],
     "deny": [],
     "ask": []
