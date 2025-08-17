@@ -1,0 +1,18 @@
+{
+  "version": "0",
+  "id": "test-monthly-event-001",
+  "detail-type": "Scheduled Event",
+  "source": "aws.events",
+  "account": "123456789012",
+  "time": "2024-01-01T11:00:00Z",
+  "region": "us-east-1",
+  "detail": {
+    "analysis_type": "monthly",
+    "triggered_by": "eventbridge",
+    "schedule_expression": "cron(0 11 1 * *)",
+    "test_mode": true
+  },
+  "resources": [
+    "arn:aws:events:us-east-1:123456789012:rule/stock-analysis-monthly-dev"
+  ]
+}

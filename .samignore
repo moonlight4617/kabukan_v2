@@ -1,0 +1,202 @@
+# SAM ignore file
+# Files and directories to exclude from the SAM build
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+tests/
+tests/unit/
+tests/integration/
+tests/mocks/
+tests/fixtures/
+tests/config/
+tests/reports/
+tests/coverage/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Development tools
+.mypy_cache/
+.flake8
+.pylintrc
+.bandit
+.pre-commit-config.yaml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Documentation
+docs/
+*.md
+README*
+CHANGELOG*
+LICENSE*
+
+# Scripts and tools
+scripts/
+Makefile
+requirements-dev.txt
+
+# Configuration templates
+.env*
+*.example
+config/
+templates/
+
+# Logs
+logs/
+*.log
+
+# Backup files
+backups/
+*.bak
+*.backup
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.travis.yml
+.circleci/
+azure-pipelines.yml
+Jenkinsfile
+
+# AWS
+.aws/
+.aws-sam/
+samconfig.toml
+
+# Package files
+*.zip
+*.tar.gz
+*.tgz
+
+# Local development
+local/
+sandbox/
+playground/
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Environment specific
+.env.local
+.env.development
+.env.staging
+.env.production
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Media files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.pdf
+*.mp4
+*.mov
+
+# Large data files
+*.csv
+*.json
+data/
+fixtures/
+
+# Security
+*.pem
+*.key
+*.crt
+*.p12
+credentials.json
+secrets.json
+
+# Performance profiling
+*.prof
+*.profile
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# PyCharm
+.idea/
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json

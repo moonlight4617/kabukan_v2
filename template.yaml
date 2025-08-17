@@ -1,0 +1,538 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  株式分析システム
+  Lambda関数を使用して日次・週次・月次の株式分析を自動実行し、
+  結果をSlackに通知するシステム
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: デプロイ環境
+    
+  SlackWebhookUrl:
+    Type: String
+    Description: Slack Webhook URL (Parameter Storeに保存される)
+    NoEcho: true
+    
+  GoogleSheetsSpreadsheetId:
+    Type: String
+    Description: Google Sheets スプレッドシートID
+    
+  GoogleSheetsCredentials:
+    Type: String
+    Description: Google Sheets認証情報JSON (Parameter Storeに保存される)
+    NoEcho: true
+    
+  GeminiApiKey:
+    Type: String
+    Description: Gemini AI API キー (Parameter Storeに保存される)
+    NoEcho: true
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 512
+    Runtime: python3.11
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        AWS_REGION: !Ref AWS::Region
+        PARAMETER_STORE_PREFIX: !Sub "/stock-analysis-${Environment}"
+        LOG_LEVEL: !If [IsProd, "INFO", "DEBUG"]
+    Tags:
+      Project: stock-analysis
+      Environment: !Ref Environment
+    Layers:
+      - !Ref MonitoringLayer
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, "prod"]
+  IsNotProd: !Not [!Equals [!Ref Environment, "prod"]]
+
+Resources:
+  # モニタリング用Layer
+  MonitoringLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "stock-analysis-monitoring-${Environment}"
+      Description: "Monitoring utilities for stock analysis system"
+      ContentUri: monitoring-layer/
+      CompatibleRuntimes:
+        - python3.11
+      RetentionPolicy: Retain
+
+  # アラート通知用DynamoDBテーブル
+  AlertsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "stock-analysis-alerts-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: alert_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: alert_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: timestamp-index
+          KeySchema:
+            - AttributeName: timestamp
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: stock-analysis
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Topics for alerts
+  CriticalAlertsSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "stock-analysis-critical-alerts-${Environment}"
+      DisplayName: "Stock Analysis Critical Alerts"
+
+  ErrorAlertsSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "stock-analysis-error-alerts-${Environment}"
+      DisplayName: "Stock Analysis Error Alerts"
+
+  PerformanceAlertsSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "stock-analysis-performance-alerts-${Environment}"
+      DisplayName: "Stock Analysis Performance Alerts"
+
+  # Lambda実行ロール
+  StockAnalysisExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "stock-analysis-execution-role-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StockAnalysisPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Parameter Store権限
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stock-analysis-${Environment}/*"
+              
+              # CloudWatch Logs権限
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/stock-analysis-${Environment}*"
+              
+              # CloudWatch Metrics権限
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "cloudwatch:namespace": !Sub "StockAnalysis/${Environment}"
+              
+              # Lambda関数の自己呼び出し権限（リトライ用）
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:stock-analysis-${Environment}"
+
+  # メインのLambda関数
+  StockAnalysisFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "stock-analysis-${Environment}"
+      CodeUri: src/
+      Handler: handlers.lambda_handler.handler
+      Description: 株式分析メイン処理
+      Role: !GetAtt StockAnalysisExecutionRole.Arn
+      Environment:
+        Variables:
+          CLOUDWATCH_NAMESPACE: !Sub "StockAnalysis/${Environment}"
+          LOG_GROUP_NAME: !Sub "/aws/lambda/stock-analysis-${Environment}"
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ErrorQueue.Arn
+      ReservedConcurrencyLimit: !If [IsProd, 5, 2]
+      Events:
+        DailyAnalysisSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0 9 * * MON-FRI)"  # 平日の午前9時（UTC）
+            Name: !Sub "stock-analysis-daily-${Environment}"
+            Description: "日次株式分析スケジュール"
+            Input: |
+              {
+                "source": "aws.events",
+                "detail-type": "Scheduled Event",
+                "detail": {
+                  "analysis_type": "daily",
+                  "triggered_by": "eventbridge"
+                }
+              }
+        
+        WeeklyAnalysisSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0 10 * * MON)"  # 毎週月曜日の午前10時（UTC）
+            Name: !Sub "stock-analysis-weekly-${Environment}"
+            Description: "週次株式分析スケジュール"
+            Input: |
+              {
+                "source": "aws.events",
+                "detail-type": "Scheduled Event",
+                "detail": {
+                  "analysis_type": "weekly",
+                  "triggered_by": "eventbridge"
+                }
+              }
+        
+        MonthlyAnalysisSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0 11 1 * *)"  # 毎月1日の午前11時（UTC）
+            Name: !Sub "stock-analysis-monthly-${Environment}"
+            Description: "月次株式分析スケジュール"
+            Input: |
+              {
+                "source": "aws.events",
+                "detail-type": "Scheduled Event",
+                "detail": {
+                  "analysis_type": "monthly",
+                  "triggered_by": "eventbridge"
+                }
+              }
+
+  # エラー処理用SQSキュー
+  ErrorQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "stock-analysis-error-queue-${Environment}"
+      VisibilityTimeoutSeconds: 300
+      MessageRetentionPeriod: 1209600  # 14日
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # デッドレターキュー
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "stock-analysis-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600  # 14日
+
+  # CloudWatch Log Group
+  StockAnalysisLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/stock-analysis-${Environment}"
+      RetentionInDays: !If [IsProd, 30, 14]
+
+  # Parameter Store パラメータ
+  SlackWebhookParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/slack/webhook-url"
+      Type: SecureString
+      Value: !Ref SlackWebhookUrl
+      Description: "Slack Webhook URL for notifications"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  GoogleSheetsSpreadsheetIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/google-sheets/spreadsheet-id"
+      Type: String
+      Value: !Ref GoogleSheetsSpreadsheetId
+      Description: "Google Sheets Spreadsheet ID"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  GoogleSheetsCredentialsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/google-sheets/credentials"
+      Type: SecureString
+      Value: !Ref GoogleSheetsCredentials
+      Description: "Google Sheets Service Account Credentials JSON"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  GeminiApiKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/gemini/api-key"
+      Type: SecureString
+      Value: !Ref GeminiApiKey
+      Description: "Gemini AI API Key"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  # 分析設定パラメータ
+  DailyAnalysisEnabledParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/analysis/enable-daily"
+      Type: String
+      Value: "true"
+      Description: "Enable daily analysis"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  WeeklyAnalysisEnabledParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/analysis/enable-weekly"
+      Type: String
+      Value: "true"
+      Description: "Enable weekly analysis"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  MonthlyAnalysisEnabledParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/stock-analysis-${Environment}/analysis/enable-monthly"
+      Type: String
+      Value: !If [IsProd, "true", "false"]
+      Description: "Enable monthly analysis"
+      Tags:
+        Project: stock-analysis
+        Environment: !Ref Environment
+
+  # CloudWatch Alarms
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "stock-analysis-lambda-errors-${Environment}"
+      AlarmDescription: "Lambda function error rate is too high"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref StockAnalysisFunction
+      TreatMissingData: notBreaching
+
+  LambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "stock-analysis-lambda-duration-${Environment}"
+      AlarmDescription: "Lambda function duration is too long"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 240000  # 4分
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref StockAnalysisFunction
+      TreatMissingData: notBreaching
+
+  LambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "stock-analysis-lambda-throttles-${Environment}"
+      AlarmDescription: "Lambda function is being throttled"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref StockAnalysisFunction
+      TreatMissingData: notBreaching
+
+  # カスタムメトリクス用のCloudWatch Dashboard（本番環境のみ）
+  StockAnalysisDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Condition: IsProd
+    Properties:
+      DashboardName: !Sub "StockAnalysis-${Environment}"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${StockAnalysisFunction}" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Invocations", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Lambda Metrics",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "StockAnalysis/${Environment}", "AnalysisSuccess", "AnalysisType", "daily" ],
+                  [ ".", ".", ".", "weekly" ],
+                  [ ".", ".", ".", "monthly" ],
+                  [ ".", "AnalysisFailure", ".", "daily" ],
+                  [ ".", ".", ".", "weekly" ],
+                  [ ".", ".", ".", "monthly" ]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Analysis Results",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+
+Outputs:
+  StockAnalysisFunctionName:
+    Description: "Lambda function name"
+    Value: !Ref StockAnalysisFunction
+    Export:
+      Name: !Sub "${AWS::StackName}-function-name"
+
+  StockAnalysisFunctionArn:
+    Description: "Lambda function ARN"
+    Value: !GetAtt StockAnalysisFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-function-arn"
+
+  StockAnalysisRoleArn:
+    Description: "IAM role ARN for Lambda function"
+    Value: !GetAtt StockAnalysisExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-role-arn"
+
+  ParameterStorePrefix:
+    Description: "Parameter Store prefix for configuration"
+    Value: !Sub "/stock-analysis-${Environment}"
+    Export:
+      Name: !Sub "${AWS::StackName}-parameter-prefix"
+
+  CloudWatchLogGroup:
+    Description: "CloudWatch Log Group"
+    Value: !Ref StockAnalysisLogGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-log-group"
+
+  ErrorQueueUrl:
+    Description: "Error queue URL"
+    Value: !Ref ErrorQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-error-queue-url"
+
+  DeadLetterQueueUrl:
+    Description: "Dead letter queue URL"
+    Value: !Ref DeadLetterQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-dlq-url"
+
+  DashboardUrl:
+    Condition: IsProd
+    Description: "CloudWatch Dashboard URL"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${StockAnalysisDashboard}"
+    Export:
+      Name: !Sub "${AWS::StackName}-dashboard-url"
+
+  AlertsTableName:
+    Description: "Alerts DynamoDB table name"
+    Value: !Ref AlertsTable
+    Export:
+      Name: !Sub "${AWS::StackName}-alerts-table"
+
+  CriticalAlertsTopicArn:
+    Description: "Critical alerts SNS topic ARN"
+    Value: !Ref CriticalAlertsSnsTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-critical-alerts-topic"
+
+  ErrorAlertsTopicArn:
+    Description: "Error alerts SNS topic ARN"
+    Value: !Ref ErrorAlertsSnsTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-error-alerts-topic"
+
+  PerformanceAlertsTopicArn:
+    Description: "Performance alerts SNS topic ARN"
+    Value: !Ref PerformanceAlertsSnsTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-performance-alerts-topic"
+
+  MonitoringLayerArn:
+    Description: "Monitoring Layer ARN"
+    Value: !Ref MonitoringLayer
+    Export:
+      Name: !Sub "${AWS::StackName}-monitoring-layer"

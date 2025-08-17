@@ -1,0 +1,387 @@
+# CloudWatch Alarms設定
+# 株式分析システムの包括的なアラーム設定
+
+# Lambda関数エラー率アラーム
+LambdaErrorRateAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-stock-analysis-error-rate"
+    AlarmDescription: "Lambda function error rate is high"
+    MetricName: ErrorRate
+    Namespace: AWS/Lambda
+    Statistic: Average
+    Period: 300
+    EvaluationPeriods: 2
+    Threshold: 5  # 5% error rate
+    ComparisonOperator: GreaterThanThreshold
+    Dimensions:
+      - Name: FunctionName
+        Value: !Sub "stock-analysis-${Environment}"
+    AlarmActions:
+      - !Ref SNSTopicErrorAlerts
+    TreatMissingData: notBreaching
+
+# Lambda関数実行時間アラーム
+LambdaDurationAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-stock-analysis-duration"
+    AlarmDescription: "Lambda function duration is too high"
+    MetricName: Duration
+    Namespace: AWS/Lambda
+    Statistic: Average
+    Period: 300
+    EvaluationPeriods: 2
+    Threshold: 120000  # 2分 (ミリ秒)
+    ComparisonOperator: GreaterThanThreshold
+    Dimensions:
+      - Name: FunctionName
+        Value: !Sub "stock-analysis-${Environment}"
+    AlarmActions:
+      - !Ref SNSTopicPerformanceAlerts
+    TreatMissingData: notBreaching
+
+# Lambda関数スロットリングアラーム
+LambdaThrottleAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-stock-analysis-throttles"
+    AlarmDescription: "Lambda function is being throttled"
+    MetricName: Throttles
+    Namespace: AWS/Lambda
+    Statistic: Sum
+    Period: 300
+    EvaluationPeriods: 1
+    Threshold: 1
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    Dimensions:
+      - Name: FunctionName
+        Value: !Sub "stock-analysis-${Environment}"
+    AlarmActions:
+      - !Ref SNSTopicCriticalAlerts
+    TreatMissingData: notBreaching
+
+# Lambda関数実行失敗アラーム（24時間）
+LambdaNoInvocationsAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-stock-analysis-no-invocations"
+    AlarmDescription: "Lambda function has not been invoked in 24 hours"
+    MetricName: Invocations
+    Namespace: AWS/Lambda
+    Statistic: Sum
+    Period: 86400  # 24時間
+    EvaluationPeriods: 1
+    Threshold: 1
+    ComparisonOperator: LessThanThreshold
+    Dimensions:
+      - Name: FunctionName
+        Value: !Sub "stock-analysis-${Environment}"
+    AlarmActions:
+      - !Ref SNSTopicCriticalAlerts
+    TreatMissingData: breaching
+
+# EventBridge ルール失敗アラーム
+EventBridgeFailureAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-eventbridge-failures"
+    AlarmDescription: "EventBridge rule invocations are failing"
+    MetricName: FailedInvocations
+    Namespace: AWS/Events
+    Statistic: Sum
+    Period: 3600  # 1時間
+    EvaluationPeriods: 1
+    Threshold: 1
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    AlarmActions:
+      - !Ref SNSTopicCriticalAlerts
+    TreatMissingData: notBreaching
+
+# カスタムメトリクス: 分析失敗率アラーム
+AnalysisFailureRateAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-analysis-failure-rate"
+    AlarmDescription: "Stock analysis failure rate is high"
+    MetricName: AnalysisFailure
+    Namespace: Custom/StockAnalysis
+    Statistic: Sum
+    Period: 3600
+    EvaluationPeriods: 2
+    Threshold: 3  # 1時間に3回失敗
+    ComparisonOperator: GreaterThanThreshold
+    Dimensions:
+      - Name: Environment
+        Value: !Ref Environment
+    AlarmActions:
+      - !Ref SNSTopicErrorAlerts
+    TreatMissingData: notBreaching
+
+# Slack通知失敗アラーム
+SlackNotificationFailureAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-slack-notification-failures"
+    AlarmDescription: "Slack notifications are failing frequently"
+    MetricName: SlackNotificationFailed
+    Namespace: Custom/StockAnalysis
+    Statistic: Sum
+    Period: 3600
+    EvaluationPeriods: 1
+    Threshold: 2  # 1時間に2回失敗
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    Dimensions:
+      - Name: Environment
+        Value: !Ref Environment
+    AlarmActions:
+      - !Ref SNSTopicErrorAlerts
+    TreatMissingData: notBreaching
+
+# API呼び出し失敗率アラーム（Google Sheets）
+GoogleSheetsAPIFailureAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-google-sheets-api-failures"
+    AlarmDescription: "Google Sheets API calls are failing"
+    MetricName: GoogleSheetsAPIError
+    Namespace: Custom/StockAnalysis
+    Statistic: Sum
+    Period: 3600
+    EvaluationPeriods: 1
+    Threshold: 2
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    Dimensions:
+      - Name: Environment
+        Value: !Ref Environment
+    AlarmActions:
+      - !Ref SNSTopicErrorAlerts
+    TreatMissingData: notBreaching
+
+# API呼び出し失敗率アラーム（Gemini AI）
+GeminiAPIFailureAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-gemini-api-failures"
+    AlarmDescription: "Gemini AI API calls are failing"
+    MetricName: GeminiAPIError
+    Namespace: Custom/StockAnalysis
+    Statistic: Sum
+    Period: 3600
+    EvaluationPeriods: 1
+    Threshold: 2
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    Dimensions:
+      - Name: Environment
+        Value: !Ref Environment
+    AlarmActions:
+      - !Ref SNSTopicErrorAlerts
+    TreatMissingData: notBreaching
+
+# メモリ使用率アラーム
+MemoryUtilizationAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-memory-utilization"
+    AlarmDescription: "Lambda function memory utilization is high"
+    MetricName: MemoryUtilization
+    Namespace: AWS/Lambda
+    Statistic: Average
+    Period: 300
+    EvaluationPeriods: 3
+    Threshold: 80  # 80% memory utilization
+    ComparisonOperator: GreaterThanThreshold
+    Dimensions:
+      - Name: FunctionName
+        Value: !Sub "stock-analysis-${Environment}"
+    AlarmActions:
+      - !Ref SNSTopicPerformanceAlerts
+    TreatMissingData: notBreaching
+
+# コスト異常検知アラーム用の複合アラーム
+CostAnomalyAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: !Sub "${Environment}-cost-anomaly"
+    AlarmDescription: "Unusual increase in Lambda invocations detected"
+    MetricName: Invocations
+    Namespace: AWS/Lambda
+    Statistic: Sum
+    Period: 3600
+    EvaluationPeriods: 1
+    Threshold: 1000  # 1時間に1000回以上の実行
+    ComparisonOperator: GreaterThanThreshold
+    Dimensions:
+      - Name: FunctionName
+        Value: !Sub "stock-analysis-${Environment}"
+    AlarmActions:
+      - !Ref SNSTopicCriticalAlerts
+    TreatMissingData: notBreaching
+
+# SNS Topics for different alert types
+SNSTopicCriticalAlerts:
+  Type: AWS::SNS::Topic
+  Properties:
+    TopicName: !Sub "${Environment}-stock-analysis-critical-alerts"
+    DisplayName: "Critical Alerts for Stock Analysis System"
+
+SNSTopicErrorAlerts:
+  Type: AWS::SNS::Topic
+  Properties:
+    TopicName: !Sub "${Environment}-stock-analysis-error-alerts"
+    DisplayName: "Error Alerts for Stock Analysis System"
+
+SNSTopicPerformanceAlerts:
+  Type: AWS::SNS::Topic
+  Properties:
+    TopicName: !Sub "${Environment}-stock-analysis-performance-alerts"
+    DisplayName: "Performance Alerts for Stock Analysis System"
+
+# Slack Webhookへの通知設定
+SlackNotificationLambda:
+  Type: AWS::Lambda::Function
+  Properties:
+    FunctionName: !Sub "${Environment}-slack-alert-forwarder"
+    Runtime: python3.11
+    Handler: index.lambda_handler
+    Role: !GetAtt SlackNotificationRole.Arn
+    Timeout: 30
+    Environment:
+      Variables:
+        SLACK_WEBHOOK_URL: !Sub "{{resolve:ssm:/stock-analysis-${Environment}/slack-webhook-url}}"
+        ENVIRONMENT: !Ref Environment
+    Code:
+      ZipFile: |
+        import json
+        import urllib3
+        import os
+        
+        def lambda_handler(event, context):
+            slack_webhook_url = os.environ.get('SLACK_WEBHOOK_URL')
+            environment = os.environ.get('ENVIRONMENT', 'unknown')
+            
+            if not slack_webhook_url:
+                print("Slack webhook URL not configured")
+                return
+            
+            http = urllib3.PoolManager()
+            
+            # SNSメッセージをパース
+            sns_message = json.loads(event['Records'][0]['Sns']['Message'])
+            alarm_name = sns_message.get('AlarmName', 'Unknown Alarm')
+            new_state = sns_message.get('NewStateValue', 'Unknown')
+            reason = sns_message.get('NewStateReason', 'No reason provided')
+            
+            # アラームの重要度を判定
+            severity_emoji = "⚠️"
+            color = "warning"
+            if "critical" in alarm_name.lower() or new_state == "ALARM":
+                severity_emoji = "🚨"
+                color = "danger"
+            elif new_state == "OK":
+                severity_emoji = "✅"
+                color = "good"
+            
+            slack_message = {
+                "text": f"{severity_emoji} CloudWatch Alarm: {alarm_name}",
+                "attachments": [
+                    {
+                        "color": color,
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"*CloudWatch Alarm Notification* {severity_emoji}\n\n*Alarm:* {alarm_name}\n*Environment:* {environment}\n*State:* {new_state}\n*Reason:* {reason}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+            try:
+                response = http.request(
+                    'POST',
+                    slack_webhook_url,
+                    body=json.dumps(slack_message).encode('utf-8'),
+                    headers={'Content-Type': 'application/json'}
+                )
+                print(f"Slack notification sent. Status: {response.status}")
+            except Exception as e:
+                print(f"Failed to send Slack notification: {str(e)}")
+            
+            return {'statusCode': 200}
+
+# SNS Subscriptions to Slack Lambda
+CriticalAlertsSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    Protocol: lambda
+    TopicArn: !Ref SNSTopicCriticalAlerts
+    Endpoint: !GetAtt SlackNotificationLambda.Arn
+
+ErrorAlertsSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    Protocol: lambda
+    TopicArn: !Ref SNSTopicErrorAlerts
+    Endpoint: !GetAtt SlackNotificationLambda.Arn
+
+PerformanceAlertsSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    Protocol: lambda
+    TopicArn: !Ref SNSTopicPerformanceAlerts
+    Endpoint: !GetAtt SlackNotificationLambda.Arn
+
+# Lambda execution role for Slack notifications
+SlackNotificationRole:
+  Type: AWS::IAM::Role
+  Properties:
+    RoleName: !Sub "${Environment}-slack-notification-role"
+    AssumeRolePolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+    ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Policies:
+      - PolicyName: SSMParameterAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+                - ssm:GetParametersByPath
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stock-analysis-${Environment}/*"
+
+# Permission for SNS to invoke Lambda
+SlackLambdaInvokePermissionCritical:
+  Type: AWS::Lambda::Permission
+  Properties:
+    FunctionName: !Ref SlackNotificationLambda
+    Action: lambda:InvokeFunction
+    Principal: sns.amazonaws.com
+    SourceArn: !Ref SNSTopicCriticalAlerts
+
+SlackLambdaInvokePermissionError:
+  Type: AWS::Lambda::Permission
+  Properties:
+    FunctionName: !Ref SlackNotificationLambda
+    Action: lambda:InvokeFunction
+    Principal: sns.amazonaws.com
+    SourceArn: !Ref SNSTopicErrorAlerts
+
+SlackLambdaInvokePermissionPerformance:
+  Type: AWS::Lambda::Permission
+  Properties:
+    FunctionName: !Ref SlackNotificationLambda
+    Action: lambda:InvokeFunction
+    Principal: sns.amazonaws.com
+    SourceArn: !Ref SNSTopicPerformanceAlerts

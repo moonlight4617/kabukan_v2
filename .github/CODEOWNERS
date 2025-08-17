@@ -1,0 +1,38 @@
+# コードオーナー設定
+# このファイルは、特定のファイルやディレクトリの変更に対して
+# 自動的にレビュアーを割り当てるために使用されます
+
+# デフォルトのオーナー（全てのファイル）
+* @stock-analysis-team
+
+# インフラストラクチャ関連
+/template.yaml @stock-analysis-team @infrastructure-team
+/samconfig.toml @stock-analysis-team @infrastructure-team
+/scripts/ @stock-analysis-team @infrastructure-team
+
+# CI/CDパイプライン
+/.github/ @stock-analysis-team @devops-team
+
+# セキュリティ関連
+/.github/workflows/security.yml @stock-analysis-team @security-team
+/.github/SECURITY.md @stock-analysis-team @security-team
+
+# 本番環境設定
+/scripts/deploy-prod.* @stock-analysis-team @production-team
+
+# Python アプリケーションコード
+/src/ @stock-analysis-team @backend-team
+/tests/ @stock-analysis-team @backend-team
+
+# 設定ファイル
+/requirements*.txt @stock-analysis-team @backend-team
+/pyproject.toml @stock-analysis-team @backend-team
+/pytest.ini @stock-analysis-team @backend-team
+
+# ドキュメント
+/*.md @stock-analysis-team @documentation-team
+/docs/ @stock-analysis-team @documentation-team
+
+# 重要な設定ファイル（複数の承認が必要）
+/.gitignore @stock-analysis-team
+/.github/dependabot.yml @stock-analysis-team @security-team

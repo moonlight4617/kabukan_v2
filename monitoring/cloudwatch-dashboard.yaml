@@ -1,0 +1,221 @@
+# CloudWatch Dashboard設定
+# 株式分析システムの包括的な監視ダッシュボード
+
+DashboardBody: |
+  {
+    "widgets": [
+      {
+        "type": "metric",
+        "x": 0,
+        "y": 0,
+        "width": 12,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "AWS/Lambda", "Invocations", "FunctionName", "stock-analysis-${Environment}" ],
+            [ ".", "Errors", ".", "." ],
+            [ ".", "Duration", ".", "." ],
+            [ ".", "Throttles", ".", "." ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Lambda Function Performance",
+          "period": 300,
+          "stat": "Average"
+        }
+      },
+      {
+        "type": "metric",
+        "x": 12,
+        "y": 0,
+        "width": 12,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "AWS/Lambda", "ConcurrentExecutions", "FunctionName", "stock-analysis-${Environment}" ],
+            [ ".", "UnreservedConcurrentExecutions", ".", "." ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Lambda Concurrency",
+          "period": 300,
+          "stat": "Maximum"
+        }
+      },
+      {
+        "type": "metric",
+        "x": 0,
+        "y": 6,
+        "width": 8,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "AWS/Events", "MatchedEvents", "RuleName", "stock-analysis-daily-${Environment}" ],
+            [ ".", ".", ".", "stock-analysis-weekly-${Environment}" ],
+            [ ".", ".", ".", "stock-analysis-monthly-${Environment}" ],
+            [ ".", "InvocationsFailures", ".", "stock-analysis-daily-${Environment}" ],
+            [ ".", ".", ".", "stock-analysis-weekly-${Environment}" ],
+            [ ".", ".", ".", "stock-analysis-monthly-${Environment}" ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "EventBridge Rules Performance",
+          "period": 3600,
+          "stat": "Sum"
+        }
+      },
+      {
+        "type": "metric",
+        "x": 8,
+        "y": 6,
+        "width": 8,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "Custom/StockAnalysis", "AnalysisSuccess", "Environment", "${Environment}", "AnalysisType", "daily" ],
+            [ ".", ".", ".", ".", ".", "weekly" ],
+            [ ".", ".", ".", ".", ".", "monthly" ],
+            [ ".", "AnalysisFailure", ".", ".", ".", "daily" ],
+            [ ".", ".", ".", ".", ".", "weekly" ],
+            [ ".", ".", ".", ".", ".", "monthly" ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Analysis Success/Failure Rate",
+          "period": 3600,
+          "stat": "Sum"
+        }
+      },
+      {
+        "type": "metric",
+        "x": 16,
+        "y": 6,
+        "width": 8,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "Custom/StockAnalysis", "SlackNotificationSent", "Environment", "${Environment}" ],
+            [ ".", "SlackNotificationFailed", ".", "." ],
+            [ ".", "GoogleSheetsAPICall", ".", "." ],
+            [ ".", "GeminiAPICall", ".", "." ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "External API Calls & Notifications",
+          "period": 3600,
+          "stat": "Sum"
+        }
+      },
+      {
+        "type": "log",
+        "x": 0,
+        "y": 12,
+        "width": 24,
+        "height": 6,
+        "properties": {
+          "query": "SOURCE '/aws/lambda/stock-analysis-${Environment}'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 100",
+          "region": "${AWS::Region}",
+          "title": "Recent Errors",
+          "view": "table"
+        }
+      },
+      {
+        "type": "metric",
+        "x": 0,
+        "y": 18,
+        "width": 12,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "AWS/Lambda", "Duration", "FunctionName", "stock-analysis-${Environment}", { "stat": "Average" } ],
+            [ ".", ".", ".", ".", { "stat": "p95" } ],
+            [ ".", ".", ".", ".", { "stat": "p99" } ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Lambda Duration (Average, p95, p99)",
+          "period": 300,
+          "yAxis": {
+            "left": {
+              "min": 0
+            }
+          }
+        }
+      },
+      {
+        "type": "metric",
+        "x": 12,
+        "y": 18,
+        "width": 12,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "Custom/StockAnalysis", "AnalysisDuration", "Environment", "${Environment}", "AnalysisType", "daily" ],
+            [ ".", ".", ".", ".", ".", "weekly" ],
+            [ ".", ".", ".", ".", ".", "monthly" ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Analysis Processing Time",
+          "period": 3600,
+          "stat": "Average",
+          "yAxis": {
+            "left": {
+              "min": 0
+            }
+          }
+        }
+      },
+      {
+        "type": "metric",
+        "x": 0,
+        "y": 24,
+        "width": 12,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "AWS/Lambda", "MemoryUtilization", "FunctionName", "stock-analysis-${Environment}" ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Memory Utilization",
+          "period": 300,
+          "stat": "Average",
+          "yAxis": {
+            "left": {
+              "min": 0,
+              "max": 100
+            }
+          }
+        }
+      },
+      {
+        "type": "metric",
+        "x": 12,
+        "y": 24,
+        "width": 12,
+        "height": 6,
+        "properties": {
+          "metrics": [
+            [ "Custom/StockAnalysis", "PortfolioValue", "Environment", "${Environment}" ],
+            [ ".", "AnalyzedStocks", ".", "." ],
+            [ ".", "WatchlistStocks", ".", "." ]
+          ],
+          "view": "timeSeries",
+          "stacked": false,
+          "region": "${AWS::Region}",
+          "title": "Portfolio Metrics",
+          "period": 86400,
+          "stat": "Average"
+        }
+      }
+    ]
+  }

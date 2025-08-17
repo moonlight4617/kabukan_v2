@@ -1,0 +1,99 @@
+version: 2
+updates:
+  # Python依存関係の更新
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 10
+    assignees:
+      - "stock-analysis-team"
+    reviewers:
+      - "stock-analysis-team"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    ignore:
+      # メジャーバージョンアップデートは手動で確認
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # AWS関連の依存関係をグループ化
+      aws-dependencies:
+        patterns:
+          - "boto3"
+          - "botocore"
+          - "aws-*"
+      # Google関連の依存関係をグループ化
+      google-dependencies:
+        patterns:
+          - "google-*"
+          - "googleapis-*"
+      # テスト関連の依存関係をグループ化
+      test-dependencies:
+        patterns:
+          - "pytest*"
+          - "*test*"
+          - "coverage"
+          - "mock"
+          - "moto"
+      # 開発ツールをグループ化
+      dev-tools:
+        patterns:
+          - "black"
+          - "flake8"
+          - "mypy"
+          - "isort"
+          - "bandit"
+          - "safety"
+
+  # GitHub Actions ワークフローの更新
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 5
+    assignees:
+      - "stock-analysis-team"
+    reviewers:
+      - "stock-analysis-team"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci/cd"
+
+  # Docker依存関係の更新（SAM使用時）
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 3
+    assignees:
+      - "stock-analysis-team"
+    reviewers:
+      - "stock-analysis-team"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"

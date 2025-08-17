@@ -1,0 +1,18 @@
+{
+  "version": "0",
+  "id": "test-weekly-event-001",
+  "detail-type": "Scheduled Event",
+  "source": "aws.events",
+  "account": "123456789012",
+  "time": "2024-01-15T10:00:00Z",
+  "region": "us-east-1",
+  "detail": {
+    "analysis_type": "weekly",
+    "triggered_by": "eventbridge",
+    "schedule_expression": "cron(0 10 * * MON)",
+    "test_mode": true
+  },
+  "resources": [
+    "arn:aws:events:us-east-1:123456789012:rule/stock-analysis-weekly-dev"
+  ]
+}

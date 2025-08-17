@@ -1,0 +1,280 @@
+name: Scheduled Function Test
+
+on:
+  schedule:
+    # 毎日 UTC 0:00 (JST 9:00) にテスト実行
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Test environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+      analysis_type:
+        description: 'Analysis type to test'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+        - daily
+        - weekly
+        - monthly
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  scheduled-test:
+    name: Test Lambda Function
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    strategy:
+      matrix:
+        environment: ${{ github.event.inputs.environment && fromJson(format('["{0}"]', github.event.inputs.environment)) || fromJson('["dev", "staging"]') }}
+        
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ matrix.environment == 'staging' && secrets.STAGING_AWS_ACCESS_KEY_ID || secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ matrix.environment == 'staging' && secrets.STAGING_AWS_SECRET_ACCESS_KEY || secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+        
+    - name: Test Lambda function
+      run: |
+        FUNCTION_NAME="stock-analysis-${{ matrix.environment }}"
+        ANALYSIS_TYPE="${{ github.event.inputs.analysis_type || 'daily' }}"
+        
+        echo "🧪 Testing Lambda function: $FUNCTION_NAME"
+        echo "Analysis type: $ANALYSIS_TYPE"
+        
+        # テスト用ペイロード作成
+        TEST_PAYLOAD=$(cat << EOF
+        {
+          "source": "scheduled-test",
+          "detail-type": "Scheduled Test",
+          "detail": {
+            "analysis_type": "$ANALYSIS_TYPE",
+            "test_mode": true,
+            "triggered_by": "github-actions"
+          },
+          "time": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        )
+        
+        echo "Payload: $TEST_PAYLOAD"
+        
+        # Lambda関数を実行
+        RESPONSE=$(aws lambda invoke \
+          --function-name $FUNCTION_NAME \
+          --payload "$TEST_PAYLOAD" \
+          --output json \
+          /tmp/lambda-response.json)
+          
+        echo "Lambda response: $RESPONSE"
+        
+        # レスポンス確認
+        STATUS_CODE=$(echo $RESPONSE | jq -r '.StatusCode')
+        EXECUTION_RESULT=$(echo $RESPONSE | jq -r '.ExecutedVersion')
+        
+        echo "Status Code: $STATUS_CODE"
+        echo "Executed Version: $EXECUTION_RESULT"
+        echo "Function Response:"
+        cat /tmp/lambda-response.json | jq .
+        
+        # エラーチェック
+        if [[ $STATUS_CODE -ne 200 ]]; then
+          echo "❌ Lambda function failed with status code: $STATUS_CODE"
+          exit 1
+        fi
+        
+        # レスポンス内容の確認
+        if grep -q "error\|Error\|ERROR" /tmp/lambda-response.json; then
+          echo "❌ Lambda function returned an error"
+          cat /tmp/lambda-response.json
+          exit 1
+        fi
+        
+        echo "✅ Lambda function test completed successfully"
+        
+    - name: Check CloudWatch logs
+      run: |
+        FUNCTION_NAME="stock-analysis-${{ matrix.environment }}"
+        LOG_GROUP="/aws/lambda/$FUNCTION_NAME"
+        
+        echo "📋 Checking CloudWatch logs for recent execution"
+        
+        # 最近のログを取得（過去5分間）
+        START_TIME=$(date -d '5 minutes ago' +%s)000
+        
+        aws logs filter-log-events \
+          --log-group-name $LOG_GROUP \
+          --start-time $START_TIME \
+          --output table || echo "⚠️ No recent logs found"
+          
+    - name: Verify EventBridge rules
+      run: |
+        ENVIRONMENT="${{ matrix.environment }}"
+        
+        echo "🔍 Verifying EventBridge rules for $ENVIRONMENT"
+        
+        RULES=(
+          "stock-analysis-daily-$ENVIRONMENT"
+          "stock-analysis-weekly-$ENVIRONMENT"
+          "stock-analysis-monthly-$ENVIRONMENT"
+        )
+        
+        for RULE in "${RULES[@]}"; do
+          echo "Checking rule: $RULE"
+          
+          RULE_STATE=$(aws events describe-rule \
+            --name $RULE \
+            --query 'State' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+            
+          if [[ "$RULE_STATE" == "ENABLED" ]]; then
+            echo "✅ Rule $RULE is enabled"
+          elif [[ "$RULE_STATE" == "DISABLED" ]]; then
+            echo "⚠️ Rule $RULE is disabled"
+          else
+            echo "❌ Rule $RULE not found"
+          fi
+        done
+
+  health-check:
+    name: Comprehensive Health Check
+    runs-on: ubuntu-latest
+    needs: scheduled-test
+    if: always()
+    
+    strategy:
+      matrix:
+        environment: ['dev', 'staging']
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ matrix.environment == 'staging' && secrets.STAGING_AWS_ACCESS_KEY_ID || secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ matrix.environment == 'staging' && secrets.STAGING_AWS_SECRET_ACCESS_KEY || secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+        
+    - name: Run health check script
+      run: |
+        if [[ -f "scripts/health-check.sh" ]]; then
+          chmod +x scripts/health-check.sh
+          ./scripts/health-check.sh ${{ matrix.environment }} --verbose
+        else
+          echo "⚠️ Health check script not found, running basic checks"
+          
+          FUNCTION_NAME="stock-analysis-${{ matrix.environment }}"
+          
+          # Lambda関数存在確認
+          if aws lambda get-function --function-name $FUNCTION_NAME >/dev/null 2>&1; then
+            echo "✅ Lambda function exists: $FUNCTION_NAME"
+          else
+            echo "❌ Lambda function not found: $FUNCTION_NAME"
+            exit 1
+          fi
+          
+          # Parameter Store確認
+          PARAM_COUNT=$(aws ssm get-parameters-by-path \
+            --path "/stock-analysis-${{ matrix.environment }}" \
+            --recursive \
+            --query 'Parameters | length(@)' \
+            --output text 2>/dev/null || echo "0")
+            
+          echo "📊 Parameter Store: $PARAM_COUNT parameters configured"
+        fi
+
+  notify-results:
+    name: Notify Test Results
+    runs-on: ubuntu-latest
+    needs: [scheduled-test, health-check]
+    if: always()
+    
+    steps:
+    - name: Determine overall status
+      id: status
+      run: |
+        if [[ "${{ needs.scheduled-test.result }}" == "success" && "${{ needs.health-check.result }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "message=All scheduled tests passed successfully" >> $GITHUB_OUTPUT
+        elif [[ "${{ needs.scheduled-test.result }}" == "failure" ]]; then
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "message=Scheduled tests failed" >> $GITHUB_OUTPUT
+        elif [[ "${{ needs.health-check.result }}" == "failure" ]]; then
+          echo "status=warning" >> $GITHUB_OUTPUT
+          echo "message=Health check failed" >> $GITHUB_OUTPUT
+        else
+          echo "status=unknown" >> $GITHUB_OUTPUT
+          echo "message=Unknown test status" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Notify Slack
+      if: env.SLACK_CI_WEBHOOK != '' && (steps.status.outputs.status == 'failure' || github.event_name == 'workflow_dispatch')
+      env:
+        SLACK_CI_WEBHOOK: ${{ secrets.SLACK_CI_WEBHOOK }}
+      run: |
+        STATUS_ICON="🔍"
+        STATUS_COLOR="good"
+        
+        if [[ "${{ steps.status.outputs.status }}" == "success" ]]; then
+          STATUS_ICON="✅"
+          STATUS_COLOR="good"
+        elif [[ "${{ steps.status.outputs.status }}" == "failure" ]]; then
+          STATUS_ICON="❌"
+          STATUS_COLOR="danger"
+        elif [[ "${{ steps.status.outputs.status }}" == "warning" ]]; then
+          STATUS_ICON="⚠️"
+          STATUS_COLOR="warning"
+        fi
+        
+        curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"text\": \"$STATUS_ICON Scheduled Function Test Results\",
+            \"attachments\": [
+              {
+                \"color\": \"$STATUS_COLOR\",
+                \"blocks\": [
+                  {
+                    \"type\": \"section\",
+                    \"text\": {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \"*Scheduled Function Test* $STATUS_ICON\n\n*Status:* ${{ steps.status.outputs.message }}\n*Trigger:* ${{ github.event_name }}\n*Repository:* ${{ github.repository }}\"
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"text\": {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \"*Test Results:*\n• Function Test: ${{ needs.scheduled-test.result }}\n• Health Check: ${{ needs.health-check.result }}\"
+                    }
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [
+                      {
+                        \"type\": \"button\",
+                        \"text\": {
+                          \"type\": \"plain_text\",
+                          \"text\": \"View Details\"
+                        },
+                        \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }" \
+          "$SLACK_CI_WEBHOOK"

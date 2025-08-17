@@ -1,0 +1,376 @@
+name: Security Scan
+
+on:
+  schedule:
+    # 毎週月曜日の UTC 2:00 (JST 11:00) に実行
+    - cron: '0 2 * * 1'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'requirements*.txt'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'requirements*.txt'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # 依存関係脆弱性チェック
+  dependency-check:
+    name: Dependency Vulnerability Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit
+        
+    - name: Run Safety check
+      run: |
+        echo "🔍 Running Safety check for known vulnerabilities..."
+        safety check --json --output safety-report.json || true
+        safety check --short-report
+        
+    - name: Run pip-audit
+      run: |
+        echo "🔍 Running pip-audit for dependency vulnerabilities..."
+        pip-audit --format=json --output=pip-audit-report.json || true
+        pip-audit --desc
+        
+    - name: Upload dependency reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: dependency-vulnerability-reports
+        path: |
+          safety-report.json
+          pip-audit-report.json
+
+  # コードセキュリティスキャン
+  code-security:
+    name: Code Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit semgrep
+        
+    - name: Run Bandit security linter
+      run: |
+        echo "🔍 Running Bandit security analysis..."
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ -f txt -o bandit-report.txt || true
+        
+        echo "Bandit Summary:"
+        bandit -r src/ --severity-level medium || true
+        
+    - name: Run Semgrep security analysis
+      run: |
+        echo "🔍 Running Semgrep security analysis..."
+        semgrep --config=auto src/ --json --output=semgrep-report.json || true
+        semgrep --config=auto src/ --text || true
+        
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: code-security-reports
+        path: |
+          bandit-report.json
+          bandit-report.txt
+          semgrep-report.json
+
+  # シークレットスキャン
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 全履歴を取得
+        
+    - name: Install TruffleHog
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+        
+    - name: Run TruffleHog secret scan
+      run: |
+        echo "🔍 Running TruffleHog secret scanning..."
+        trufflehog git file://. --json --output=trufflehog-report.json || true
+        
+        # 結果の確認
+        if [[ -f "trufflehog-report.json" ]] && [[ -s "trufflehog-report.json" ]]; then
+          echo "⚠️ Potential secrets found!"
+          cat trufflehog-report.json | jq -r '.Raw // .DetectorName // .Verified // empty' | head -20
+        else
+          echo "✅ No secrets detected"
+        fi
+        
+    - name: Upload secret scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: secret-scan-reports
+        path: trufflehog-report.json
+
+  # Infrastructure as Code セキュリティ
+  iac-security:
+    name: Infrastructure Security Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Checkov
+      run: |
+        pip install checkov
+        
+    - name: Run Checkov on SAM template
+      run: |
+        echo "🔍 Running Checkov security analysis on infrastructure..."
+        checkov -f template.yaml --framework cloudformation --output json --output-file checkov-report.json || true
+        checkov -f template.yaml --framework cloudformation || true
+        
+    - name: Run CFN-Lint
+      run: |
+        pip install cfn-lint
+        echo "🔍 Running CloudFormation Linter..."
+        cfn-lint template.yaml --output-file cfn-lint-report.json || true
+        cfn-lint template.yaml || true
+        
+    - name: Upload IaC security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: iac-security-reports
+        path: |
+          checkov-report.json
+          cfn-lint-report.json
+
+  # SAST (Static Application Security Testing)
+  sast-scan:
+    name: SAST Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: python
+        queries: security-extended
+        
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+  # Docker セキュリティ (SAM使用時)
+  container-security:
+    name: Container Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name != 'pull_request'  # PRでは実行しない（時間がかかるため）
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Install Trivy
+      run: |
+        sudo apt-get update
+        sudo apt-get install wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install trivy
+        
+    - name: Set up SAM CLI
+      uses: aws-actions/setup-sam@v2
+      with:
+        use-installer: true
+        
+    - name: Build SAM application
+      run: |
+        sam build --use-container
+        
+    - name: Scan container images with Trivy
+      run: |
+        echo "🔍 Scanning container images for vulnerabilities..."
+        
+        # SAMビルドで生成されたイメージをスキャン
+        if [[ -d ".aws-sam/build" ]]; then
+          find .aws-sam/build -name "Dockerfile" -exec dirname {} \; | while read dir; do
+            echo "Scanning directory: $dir"
+            trivy fs --format json --output trivy-$(basename $dir)-report.json $dir || true
+            trivy fs $dir || true
+          done
+        fi
+        
+    - name: Upload container security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: container-security-reports
+        path: trivy-*-report.json
+
+  # セキュリティスキャン結果統合
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [dependency-check, code-security, secret-scan, iac-security, sast-scan]
+    if: always()
+    
+    steps:
+    - name: Download all security reports
+      uses: actions/download-artifact@v3
+      with:
+        path: ./security-reports
+        
+    - name: Generate security summary
+      run: |
+        echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # スキャン結果のサマリー
+        echo "### Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Scan Type | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Dependency Check | ${{ needs.dependency-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Security | ${{ needs.code-security.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Secret Scan | ${{ needs.secret-scan.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| IaC Security | ${{ needs.iac-security.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| SAST Analysis | ${{ needs.sast-scan.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # 重要な発見事項の確認
+        echo "### Critical Findings" >> $GITHUB_STEP_SUMMARY
+        
+        # Banditレポートの確認
+        if [[ -f "./security-reports/code-security-reports/bandit-report.json" ]]; then
+          HIGH_SEVERITY=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' ./security-reports/code-security-reports/bandit-report.json 2>/dev/null || echo "0")
+          if [[ $HIGH_SEVERITY -gt 0 ]]; then
+            echo "- 🚨 **$HIGH_SEVERITY high-severity security issues found in code**" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+        
+        # Safetyレポートの確認
+        if [[ -f "./security-reports/dependency-vulnerability-reports/safety-report.json" ]]; then
+          VULN_COUNT=$(jq '.vulnerabilities | length' ./security-reports/dependency-vulnerability-reports/safety-report.json 2>/dev/null || echo "0")
+          if [[ $VULN_COUNT -gt 0 ]]; then
+            echo "- ⚠️ **$VULN_COUNT dependency vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+        
+        # シークレットスキャンの確認
+        if [[ -f "./security-reports/secret-scan-reports/trufflehog-report.json" ]] && [[ -s "./security-reports/secret-scan-reports/trufflehog-report.json" ]]; then
+          echo "- 🔐 **Potential secrets detected in repository**" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # 全体的な評価
+        FAILED_COUNT=0
+        [[ "${{ needs.dependency-check.result }}" != "success" ]] && ((FAILED_COUNT++))
+        [[ "${{ needs.code-security.result }}" != "success" ]] && ((FAILED_COUNT++))
+        [[ "${{ needs.secret-scan.result }}" != "success" ]] && ((FAILED_COUNT++))
+        [[ "${{ needs.iac-security.result }}" != "success" ]] && ((FAILED_COUNT++))
+        [[ "${{ needs.sast-scan.result }}" != "success" ]] && ((FAILED_COUNT++))
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [[ $FAILED_COUNT -eq 0 ]]; then
+          echo "🛡️ **Overall Security Status: GOOD** - All security scans passed" >> $GITHUB_STEP_SUMMARY
+        elif [[ $FAILED_COUNT -le 2 ]]; then
+          echo "⚠️ **Overall Security Status: MODERATE** - Some security issues found" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "🚨 **Overall Security Status: POOR** - Multiple security issues found" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # 重要な脆弱性検出時の通知
+  notify-critical:
+    name: Notify Critical Issues
+    runs-on: ubuntu-latest
+    needs: [dependency-check, code-security, secret-scan]
+    if: failure() && (github.ref == 'refs/heads/main' || github.event_name == 'schedule')
+    
+    steps:
+    - name: Notify Slack on critical security issues
+      if: env.SLACK_SECURITY_WEBHOOK != ''
+      env:
+        SLACK_SECURITY_WEBHOOK: ${{ secrets.SLACK_SECURITY_WEBHOOK }}
+      run: |
+        curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"text\": \"🚨 Critical Security Issues Detected\",
+            \"blocks\": [
+              {
+                \"type\": \"section\",
+                \"text\": {
+                  \"type\": \"mrkdwn\",
+                  \"text\": \"*Critical Security Issues Detected* :warning:\n\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Trigger:* ${{ github.event_name }}\"
+                }
+              },
+              {
+                \"type\": \"section\",
+                \"text\": {
+                  \"type\": \"mrkdwn\",
+                  \"text\": \"*Failed Security Scans:*\n• Dependency Check: ${{ needs.dependency-check.result }}\n• Code Security: ${{ needs.code-security.result }}\n• Secret Scan: ${{ needs.secret-scan.result }}\"
+                }
+              },
+              {
+                \"type\": \"section\",
+                \"text\": {
+                  \"type\": \"mrkdwn\",
+                  \"text\": \"*Action Required:*\n:point_right: Review security reports immediately\n:point_right: Address critical vulnerabilities\n:point_right: Update dependencies if needed\"
+                }
+              },
+              {
+                \"type\": \"actions\",
+                \"elements\": [
+                  {
+                    \"type\": \"button\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \"View Security Report\"
+                    },
+                    \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                  }
+                ]
+              }
+            ]
+          }" \
+          "$SLACK_SECURITY_WEBHOOK"
